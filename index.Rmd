@@ -1,0 +1,82 @@
+---
+title: "Custom Pixel Reclassification in Raster Data Using Specified Coordinates"
+author: "Sebastián Sánchez Cuartas"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+    theme: united
+    highlight: tango
+    css: styles.css
+---
+
+# **Introduction**
+
+This code is particularly useful for the reclassification of individual pixels in a raster, which is beneficial for applications such as connectivity modeling and other uses. The script takes a raster and a .csv file with associated sample coordinates, using these coordinates to identify specific pixels within the raster. It then assigns specific values to each pixel. In the provided example, the script starts with a value of 150 for the first pixel corresponding to the first coordinate in the .csv file and continues incrementally (151, 152, etc.) until all available coordinates are covered. However, the assigned values can be customized according to the needs of the analysis.
+
+```{r eval=FALSE}
+
+# Load necessary libraries
+library(sf)
+library(raster)
+
+# Define the input folder for the raster files
+input_folder <- "your/input/folder/path"
+
+# Define the output folder for the modified raster files
+output_folder <- "your/output/folder/path"
+
+# Define the location of the CSV file with the points
+points_file <- "your/csv/file/path.csv"
+
+# Load the points from the CSV file
+points <- read.csv(points_file)
+
+# Convert the points to sf objects
+points_sf <- st_as_sf(points, coords = c("Longitude", "Latitude"), crs = 4326)
+
+# Project the points to the 32618 coordinate system
+if (!identical(st_crs(points_sf), CRS("+proj=utm +zone=18 +datum=WGS84 +units=m +no_defs"))) {
+  points_sf <- st_transform(points_sf, crs = 32618)
+}
+
+# Read the raster files from the input folder
+raster_files <- list.files(input_folder, pattern = "\\.tif$", full.names = TRUE)
+
+# Iterate over each raster file
+for (raster_file in raster_files) {
+  # Load the original raster
+  original_raster <- raster(raster_file)
+  
+  # Create an empty raster with the same extent and resolution as the original raster
+  buffered_raster <- rasterize(points_sf, original_raster, field = 1)
+  
+  # Get the coordinates of the points
+  points_coords <- st_coordinates(points_sf)
+  
+  # Get the cells containing the points
+  points_cells <- cellFromXY(original_raster, points_coords)
+  
+  # Assign sequential values to the pixels containing the points
+  assigned_values <- seq(150, 150 + length(points_cells) - 1)
+  
+  # Reclassify the pixels containing the points
+  buffered_raster[points_cells] <- assigned_values
+  
+  # Combine the original raster with the buffered raster
+  combined_raster <- original_raster
+  combined_raster[buffered_raster != 0] <- buffered_raster[buffered_raster != 0]
+  
+  # Save the combined raster as a new TIFF file
+  output_filename <- paste0("Points_", basename(raster_file))
+  writeRaster(combined_raster, file.path(output_folder, output_filename), format = "GTiff", overwrite = TRUE, datatype = "INT1U")
+}
+
+```
+
+
+```{r echo=FALSE, fig.align='center', fig.cap="*Example of a raster with reclassified pixels based on altitude values, located in the Eastern Cordillera. The reclassified pixels are shown in white.*", out.width='75%'}
+knitr::include_graphics("example.jpg")
+
+```
